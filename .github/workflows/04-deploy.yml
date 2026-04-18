@@ -2,11 +2,10 @@ name: 04 Deploy from ECR
 
 on:
   workflow_run:
-    workflows: ["03 Build & Push to ECR"]
+    workflows: ["03 Build & Security Scan & Push to ECR"]
     types: [completed]
 
 env:
-  IMAGE_NAME: tiny-health-app
   AWS_REGION: ${{ secrets.AWS_REGION }}
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
@@ -32,7 +31,7 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Get image tag from build
+      - name: Get image tag
         id: tag
         run: |
           TAG="${{ github.event.workflow_run.head_sha }}"
@@ -56,6 +55,7 @@ jobs:
             curl --fail http://127.0.0.1:$APP_PORT/health && exit 0
             sleep 2
           done
+          echo "App failed"
           exit 1
 
       - name: Cleanup

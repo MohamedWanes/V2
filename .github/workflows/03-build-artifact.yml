@@ -1,4 +1,4 @@
-name: 03 Build & Push to ECR
+name: 03 Build & Security Scan & Push to ECR
 
 on:
   workflow_dispatch:
@@ -38,7 +38,7 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set image tag
+      - name: Generate image tag
         id: tag
         run: |
           TAG="${GITHUB_SHA::7}"
@@ -47,6 +47,16 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -t $IMAGE_NAME:${{ steps.tag.outputs.tag }} .
+
+    
+      - name: Run Trivy Security Scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
 
       - name: Tag image for ECR
         run: |
