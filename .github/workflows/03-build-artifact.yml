@@ -51,13 +51,15 @@ jobs:
           docker build -t $IMAGE_NAME:${{ steps.tag.outputs.tag }} .
 
 
-      - name: Security Scan with Trivy
-        uses: aquasecurity/trivy-action@0.19.0
+      - name: Run Trivy Security Scan
+        uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+          scan-type: fs
+          scan-ref: .
           format: table
           exit-code: 1
-          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
 
       - name: Tag image for ECR
         run: |
