@@ -1,4 +1,4 @@
-name: 03 Build & Security Scan & Push to ECR
+name: 03 Build & Push to ECR with Security Scan
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v6
 
       - name: Set up Python
@@ -25,8 +25,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run tests
+      - name: Run unit tests
         run: python -m unittest discover -s tests -v
+
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -38,6 +39,7 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+
       - name: Generate image tag
         id: tag
         run: |
@@ -45,15 +47,16 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Build Docker image
-        run: docker build -t $IMAGE_NAME:${{ steps.tag.outputs.tag }} .
+        run: |
+          docker build -t $IMAGE_NAME:${{ steps.tag.outputs.tag }} .
 
-      - name: Run Trivy Security Scan
-        uses: aquasecurity/trivy-action@0.28.0
+
+      - name: Security Scan with Trivy
+        uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
           format: table
           exit-code: 1
-          ignore-unfixed: true
           severity: CRITICAL,HIGH
 
       - name: Tag image for ECR
