@@ -41,27 +41,23 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/ec2_key
           chmod 600 ~/.ssh/ec2_key
           ssh-keyscan -H ${{ vars.EC2_IP }} >> ~/.ssh/known_hosts
-        shell: bash
         env:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
 
-      - name: Testing SSH
+      - name: Test SSH
         run: |
           ssh -i ~/.ssh/ec2_key ubuntu@${{ vars.EC2_IP }} \
           "echo Connected && whoami && hostname"
 
-      - name: Check out repository
+      - name: Checkout repo
         uses: actions/checkout@v6
 
-      - name: Listing files
-        run: tree
-
-      - name: Copy scripts folder
+      - name: Copy scripts to EC2
         run: |
           scp -r -i ~/.ssh/ec2_key ./scripts \
           ubuntu@${{ vars.EC2_IP }}:/tmp/
 
-      - name: Execute target script
+      - name: Prepare EC2
         run: |
           ssh -i ~/.ssh/ec2_key ubuntu@${{ vars.EC2_IP }} \
           "chmod +x /tmp/scripts/assessment/prepare-ubuntu-vm.sh && \
@@ -72,18 +68,14 @@ jobs:
         run: |
           echo "PASSWORD=$(aws ecr get-login-password --region $AWS_REGION)" >> $GITHUB_OUTPUT
 
-      - name: Login + Pull on EC2
+      - name: Login & Pull image on EC2
         run: |
           ssh -i ~/.ssh/ec2_key ubuntu@${{ vars.EC2_IP }} \
           "echo '${{ steps.ecr.outputs.PASSWORD }}' | \
           docker login --username AWS --password-stdin ${ECR_REGISTRY} && \
           docker pull ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
 
-      - name: List Docker images on EC2
-        run: |
-          ssh -i ~/.ssh/ec2_key ubuntu@${{ vars.EC2_IP }} "docker image ls"
-
-      - name: Stop old container (if exists)
+      - name: Stop old container
         run: |
           ssh -i ~/.ssh/ec2_key ubuntu@${{ vars.EC2_IP }} \
           "docker rm -f ${CONTAINER_NAME} || true"
@@ -96,23 +88,36 @@ jobs:
             -p ${APP_PORT}:8000 \
             ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
 
-      - name: Show running container
+      - name: Show running containers
         run: |
           ssh -i ~/.ssh/ec2_key ubuntu@${{ vars.EC2_IP }} "docker ps"
 
-      - name: Wait for app (smart)
-        run: |
-          for i in {1..10}; do
-            curl -s http://${{ vars.EC2_IP }}:${APP_PORT}/health && break
-            echo "Waiting for app..."
-            sleep 2
-          done
 
-      - name: Running validation script
+      - name: Wait & Validate ON EC2
         run: |
-          bash scripts/assessment/validate-deployment.sh http://${{ vars.EC2_IP }}:${APP_PORT}
+          ssh -i ~/.ssh/ec2_key ubuntu@${{ vars.EC2_IP }} "
+            echo '==== WAIT FOR APP ====';
+            for i in {1..10}; do
+              curl -f http://localhost:${APP_PORT}/health && exit 0
+              echo 'Waiting for app...'
+              sleep 2
+            done
 
-      - name: Stop container
+            echo '==== VALIDATION FAILED ====';
+            
+            echo '==== CURL TEST ====';
+            curl -v http://localhost:${APP_PORT}/health || true;
+
+            echo '==== DOCKER LOGS ====';
+            docker logs ${CONTAINER_NAME} || true;
+
+            echo '==== PORT CHECK ====';
+            ss -tulnp | grep 8000 || true;
+
+            exit 1
+          "
+
+      - name: Stop container (always)
         if: always()
         run: |
           ssh -i ~/.ssh/ec2_key ubuntu@${{ vars.EC2_IP }} \
